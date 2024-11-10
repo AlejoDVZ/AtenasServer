@@ -7,7 +7,7 @@ const hashPassword = (password) =>  //hashea la contraseña
   }
 exports.login = (req,res) =>{
   
-  const peticion = req[0]
+  const peticion = req.body
   console.log(peticion);
 
   if (!req.body) {return res.status(400).json({ error: 'Cuerpo de la solicitud no proporcionado' });}
