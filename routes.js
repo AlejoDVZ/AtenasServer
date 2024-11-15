@@ -14,7 +14,7 @@ router.get("/", function (req, res) {
     )
   });
 
-router.get('/test/:id',test.person);
+router.post('/test/login',test.login);
 
 router.post('/login', loginController.login);
 

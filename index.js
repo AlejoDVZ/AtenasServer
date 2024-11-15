@@ -7,8 +7,8 @@ const CorsOptions ={
     origin: "http://localhost:5173",
     optionSucessStatus: 200,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
 }
 
 const router = require("./routes")
