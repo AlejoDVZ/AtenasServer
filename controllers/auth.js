@@ -29,7 +29,7 @@ exports.login = (req,res) =>{
       }
       const user = results[0];
       console.log('estas viendo la informacion del usuario',user);
-      const token = jwt.sign({id: user.id, name: user.user},'llavesecretauwu',{expiresIn:'1h'});
+      const token = jwt.sign({id: user.id, name: user.user,defensoria : user.defensoria},'llavesecretauwu',{expiresIn:'1h'});
       res.json({token}); 
   });
 }
