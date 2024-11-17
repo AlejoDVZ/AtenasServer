@@ -1,10 +1,6 @@
 const db = require('../db')
 
 
-exports.test = (req,res) =>{
-  console.log(req.body); // Asegúrate de que aquí se vean los datos
-  res.send(req.body);
-}
 exports.cases = (req,res) =>{
   
   const id  = req.body.id;
@@ -19,22 +15,36 @@ exports.cases = (req,res) =>{
 });
 }
 exports.checkcase = (req,res)=>{
-  const numc = req.params.numbercausa
-  db.query('SELECT causas.id FROM causas_states INNER JOIN causas ON causas.id = causas_states.causa WHERE causas.numberCausa = ?',[numc],(error,results)=>{
+  const numc = req.params.numbercausa;
+  console.log (req.params);
+  const query = "SELECT causas.id FROM causas_states INNER JOIN causas ON causas.id = causas_states.causa WHERE causas.numberCausa = ? ";
+  if (!numc) {
+    return res.status(400).json({ error: 'El número de causa es obligatorio.' });
+  }
+  db.query(query,[numc],(error,results)=>{
     if (error) throw error;
     if (results.length === 0){
         return res.status(404)
     }
-    res.status(200).json(results);
-    console.log(results);
+    console.log(results[0]);
+    res.status(200).json(results[0]);
   })
-}
-exports.activatecase =(req,res) =>{
-  const idcase = req.params.id;
-  const status = req.parasms.status
-  db.query('UPDATE UPDATE `causas_states` SET `status` = 1 WHERE causas_states.id = ? ')
+
 }
 exports.newcase = (req,res) =>{
-  const numbrecase = req.params
 
+  const {numberCausa,dateB,dateA,tribunalRecord,calification} = req.body;
+  console.log(req.body);
+  if (!numberCausa || !dateB || !dateA || !tribunalRecord || !calification) {
+    return res.status(400).json({ error: 'Todos los campos son obligatorios.' });
+  }
+  db.query('INSERT INTO `causas` (`id`, `numberCausa`, `dateB`, `dateA`, `tribunalRecord`, `calification`) VALUES (NULL, ?, ?, ?, ?, ?);',[numberCausa,dateB,dateA,tribunalRecord,calification],(error,results)=>{
+    if (error) {
+      console.error('Error al insertar el caso:', error);
+      return res.status(500).json({ error: 'Error al crear el caso.' });
+    }
+    console.log(results);
+    return res.status(201).json({ message: 'Caso creado exitosamente.', id: results.insertId });
+    
+  })
 }

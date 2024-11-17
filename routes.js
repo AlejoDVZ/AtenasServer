@@ -27,6 +27,9 @@ router.get('/common/status',common.statuscase);
 
 router.post('/cases/:numbercausa',usuarioController.checkcase);
 
+router.post('/register/newcase',usuarioController.newcase)
 router.post('/register/member',admin.NewMember);
+
+router.post('/test/register/:stablisment',test.insert)
 
 module.exports = router;

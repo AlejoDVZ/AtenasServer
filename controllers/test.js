@@ -1,3 +1,4 @@
+const { json } = require('body-parser');
 const db = require('../db')
 const crypto = require('crypto');
 
@@ -35,4 +36,15 @@ exports.allusers = (req,res) =>{
     if (error) throw error;
     res.status(200).json(results);
     });
+}
+exports.insert = (req,res) =>{
+    const stablisment = req.params.stablisment;
+    db.query('INSERT INTO stablisments (id,name) values (NULL,?)',stablisment,(error,results)=>{
+        if (error) throw error;
+        if (error) {
+            return res.status(500).json({ error: 'Error al realizar la consulta' });
+        }
+    console.log('todo piola')
+    res.status(200).json({id:results.insertId})
+    })
 }
