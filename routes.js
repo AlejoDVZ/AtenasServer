@@ -24,12 +24,19 @@ router.post('/user/cases',usuarioController.cases);
 router.get('/common/doctype',common.documentype);
 router.get('/common/education',common.educationlevel);
 router.get('/common/status',common.statuscase);
+router.get('/common/roles',common.roles);
+router.get('/common/prefix',common.phonePrefix);
 
-router.post('/cases/:numbercausa',usuarioController.checkcase);
+router.get('/allmembers',admin.MemberList)
+
+router.post('/check',usuarioController.checkcase);
+router.post('/check/personal',);
 
 router.post('/register/newcase',usuarioController.newcase)
+router.post('/register/defendant',usuarioController.newdefendant)
 router.post('/register/member',admin.NewMember);
 
 router.post('/test/register/:stablisment',test.insert)
+router.post('/test/checkcase',test.checkcase);
 
 module.exports = router;

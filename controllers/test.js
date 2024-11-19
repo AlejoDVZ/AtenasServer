@@ -48,3 +48,20 @@ exports.insert = (req,res) =>{
     res.status(200).json({id:results.insertId})
     })
 }
+exports.checkcase = (req,res) => {
+const numc = req.body.numberCausa;
+console.log(numc);
+
+  if (!numc || numc === null) {
+    return res.status(400).json({ error: 'El número de causa es obligatorio.' });
+  }
+  
+  db.query("SELECT causas.id FROM causas_states INNER JOIN causas ON causas.id = causas_states.causa WHERE causas.numberCausa = ? ",[numc],(error,results)=>{
+    if (error) throw error;
+    if (results.length === 0){
+        return res.status(404)
+    }
+    console.log(results[0]);
+    res.status(200).json(results[0]);
+  })
+}

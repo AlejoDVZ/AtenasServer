@@ -1,4 +1,5 @@
 const mysql = require('mysql2')
+const promise = require('mysql2/promise')
 
 const db = mysql.createConnection({
     host: "localhost",
@@ -7,6 +8,7 @@ const db = mysql.createConnection({
     password: "",
     database: "atenasdb",
   });
+
 
   db.connect((err) => {
     if (err) throw err;
