@@ -24,9 +24,21 @@ exports.roles = (req,res) => {
                 res.status(200).json(results);
                 console.log(results);
 });};
-exports.phonePrefix = (req,res) => {
-        db.query('SELECT * FROM phone_prefix; ',(error,results) =>{
+exports.defensorias = (req,res) => {
+        db.query('SELECT * FROM defensorias; ',(error,results) =>{
                 if (error) throw error;
                 res.status(200).json(results);
                 console.log(results);
 });};
+exports.fiscalias = (req, res) => {
+        db.query('SELECT * FROM fiscalias;', (error, results) => {
+          if (error) throw error;
+          res.status(200).json(results);
+        });
+      };
+exports.detentioncenters = (req, res) => {
+db.query('SELECT * FROM stablisments;', (error, results) => {
+        if (error) throw error;
+        res.status(200).json(results);
+});
+};
