@@ -1,5 +1,8 @@
 const { response } = require('express');
-const mysql = require('mysql2/promise')
+const mysql = require('mysql2/promise');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs-extra');
 const db = mysql.createPool({
   host: "localhost",
   port:3306,
@@ -7,6 +10,32 @@ const db = mysql.createPool({
   password: "",
   database: "atenasdb",
 });
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const { defensoriaId, caseId } = req.body;
+    const dir = path.join(__dirname, '..', 'uploads', defensoriaId.toString(), caseId.toString());
+    fs.ensureDirSync(dir);
+    cb(null, dir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  fileFilter: function (req, file, cb) {
+    const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Tipo de archivo no permitido'), false);
+    }
+  }
+});
+
+exports.newProceedingWithFile = upload.single('file');
 
 exports.cases = async (req, res) => {
   const def = req.body.def;
@@ -17,9 +46,10 @@ exports.cases = async (req, res) => {
   console.log('Defensoria:', def);
 
   const query = `
-    SELECT causas.id, causas.numberCausa, causas.dateB, causas.dateA, causas.tribunalRecord, causas.fiscalia, causas.calification 
+    SELECT causas.id, causas.numberCausa, causas.dateB, causas.dateA, causas.tribunalRecord, causas.fiscalia, causas.calification, status.state 
     FROM causas 
     INNER JOIN causas_states ON causas_states.causa = causas.id 
+    INNER JOIN status ON causas_states.status = status.id 
     WHERE causas_states.status = 1 AND causas.defensoria = ?
   `;
 
@@ -37,12 +67,13 @@ exports.cases = async (req, res) => {
     return res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
+
 exports.proceedings = async (req, res) => {
   const caso = req.body.id;
+  console.log('debug de la funcion',req.body.id);
   if (!caso) {
-    return res.status(400).json({ error: 'Defensoria es obligatoria.' });
+    return res.status(400).json({ error: 'caso es obligatorio.' });
   }
-
   console.log('Caso:', caso);
   const query = `
     SELECT 
@@ -52,11 +83,12 @@ exports.proceedings = async (req, res) => {
     a.reported, 
     a.dateReport, 
     p.name, 
-    p.lastname
+    p.lastname,
+    a.attachmentPath
 FROM 
     actuaciones AS a
 INNER JOIN 
-    actuaciones_causas AS ac ON ac.causa = a.id
+    actuaciones_causas AS ac ON ac.actuacion = a.id
 INNER JOIN 
     causas AS c ON c.id = ac.causa
 INNER JOIN 
@@ -72,13 +104,138 @@ WHERE
     if (results.length === 0) {
       return res.status(404).json({ message: 'procedimiento no encontrados' });
     }
-
-    return res.status(200).json(results);
+    const processedResults = results.map(result => ({
+      ...result,
+      downloadUrl: result.attachmentPath ? `/download/${result.id}` : null
+    }));
+    return res.status(200).json(processedResults);
   } catch (error) {
     console.error('Error in proceedings query:', error);
     return res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
+
+exports.defendants = async (req, res) => {
+  const caso  = req.body.caso;
+  console.log(caso);
+  if (!caso) {
+    return res.status(400).json({ error: 'Falta la información del caso.' });
+  }
+
+  const connection = await db.getConnection();
+  try {
+    const [defendants] = await connection.query(
+      `SELECT DISTINCT d.id, d.name, d.lastname, d.typeDocument, d.document, d.sex, d.birth, d.education, d.captureOrder,
+              a.stablisment, a.provisional, a.arrestedDate, a.freed
+       FROM causas_defendido_usuario AS cdu
+       INNER JOIN defended AS d ON cdu.defendido = d.id
+       LEFT JOIN arrested AS a ON a.defended = d.id
+       WHERE cdu.causa = ?`,
+      [caso]
+    );
+    if (defendants.length < 1) {
+      res.status(404).json({message : "no hay nada"})
+    }
+    res.status(200).json(defendants);
+  } catch (error) {
+    console.error('Error al obtener los defendidos:', error);
+    res.status(500).json({ error: 'Error al obtener los defendidos.' });
+  } finally {
+    connection.release();
+  }
+};
+
+exports.updateDefendant = async (req, res) => {
+  const { defendantId, ...updates } = req.body;
+
+  if (!defendantId) {
+    return res.status(400).json({ error: 'Falta el ID del defendido.' });
+  }
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    if (updates.freed) {
+      await connection.query(
+        'UPDATE arrested SET freed = TRUE WHERE defended = ?',
+        [defendantId]
+      );
+    } else if (updates.arrested) {
+      await connection.query(
+        'INSERT INTO arrested (defended, stablisment, arrestedDate) VALUES (?, ?, ?)',
+        [defendantId, updates.stablisment, updates.arrestedDate]
+      );
+      await connection.query(
+        'UPDATE defended SET captureOrder = FALSE WHERE id = ?',
+        [defendantId]
+      );
+    } else if (updates.captureOrder !== undefined) {
+      await connection.query(
+        'UPDATE defended SET captureOrder = ? WHERE id = ?',
+        [updates.captureOrder, defendantId]
+      );
+    }
+
+    await connection.commit();
+    res.status(200).json({ message: 'Defendido actualizado exitosamente.' });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error al actualizar el defendido:', error);
+    res.status(500).json({ error: 'Error al actualizar el defendido.' });
+  } finally {
+    connection.release();
+  }
+};
+
+exports.newproceeding = async (req,res) =>{
+  const { activity, reportDate, result, caseId, userId } = req.body;
+  let filePath = null;
+
+  console.log(req.body)
+
+  if (req.file) {
+    console.log('Nombre del archivo:', req.file.filename);
+    console.log('Ruta del archivo:', req.file.path);
+    console.log('Tipo de archivo:', req.file.mimetype);
+    filePath = req.file.path.replace(__dirname + '/../', '');
+  }
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // Insertar la actuación
+    const [proceedingResult] = await connection.query(
+      'INSERT INTO actuaciones (actividad, resultado, reported, dateReport) VALUES (?, ?, NOW(), ?)',
+      [activity, result, reportDate]
+    );
+    const proceedingId = proceedingResult.insertId;
+
+    // Insertar en la tabla relacional
+    await connection.query(
+      'INSERT INTO actuaciones_causas (causa, actuacion, how_report) VALUES (?, ?, ?)',
+      [caseId, proceedingId, userId]
+    );
+
+    // Si hay un archivo, guardar su ruta en la base de datos
+    if (filePath) {
+      await connection.query(
+        'UPDATE actuaciones SET attachmentPath = ? WHERE id = ?',
+        [filePath, proceedingId]
+      );
+    }
+
+    await connection.commit();
+    return res.status(201).json({ message: 'Actuación registrada exitosamente', proceedingId });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error al registrar la actuación:', error);
+    res.status(500).json({ error: 'Error al registrar la actuación' });
+  } finally {
+    connection.release();
+  }
+} 
+
 exports.checkcase = async (req,res)=>{
   const { numberCausa, defensoriaId } = req.body;
   
@@ -102,6 +259,7 @@ exports.checkcase = async (req,res)=>{
     res.status(500).json({ error: 'Error al verificar el caso.' });
   }
 }
+
 exports.newcase = async (req,res) =>{
   
   console.log(req.body);
