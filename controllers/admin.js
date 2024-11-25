@@ -11,11 +11,10 @@ const db2 = mysql.createPool({
     database: "atenasdb",
   });
 exports.MemberList = (req,res) => {
-  const query ='SELECT p.id, p.name, p.lastname, p.typeDocument, p.document, roles.role as role, p.email, phones.number FROM personal AS p INNER JOIN phone_personal ON phone_personal.personal = p.id INNER JOIN phones ON phone_personal.phone = phones.id INNER JOIN roles ON roles.id = p.role;'
+  const query ='SELECT p.id, p.name, p.lastname, p.typeDocument, p.document, roles.role as role, p.email, phones.number, dp.defensoria FROM personal AS p INNER JOIN phone_personal ON phone_personal.personal = p.id INNER JOIN phones ON phone_personal.phone = phones.id INNER JOIN roles ON roles.id = p.role LEFT JOIN defensorias_personal as dp on p.id = dp.personal;'
   db.query(query,(error,results) =>{
     if (error) throw error;
     res.status(200).json(results);
-    console.log(results);
 });
 }
 exports.NewMember = async (req,res) => {
@@ -170,9 +169,10 @@ exports.DeletePersonal = async (req,res) =>{
   }
 }
 exports.UpdatePersonal = async (req, res) => {
-  const { id, name, lastname, typeDocument, document, role, email, number } = req.body;
+  const { id, name, lastname, typeDocument, document, role, email, number,defensoria } = req.body;
   console.log('Received data:', req.body);
-
+  const def = parseInt(defensoria,10);
+  console.log('defensoria parseada',def)
   const connection = await db2.getConnection();
 
   try {
@@ -196,12 +196,17 @@ exports.UpdatePersonal = async (req, res) => {
       [name, lastname, typeDocument, document, roleId, email, id]
     );
 
+    //update defensoria
+    await connection.query(
+      'UPDATE defensorias_personal SET defensoria = ? WHERE defensorias_personal.id = ?; ',
+      [def,id]
+    );
+
     // Update phone number
     const [existingPhone] = await connection.query(
       'SELECT phones.id FROM phones INNER JOIN phone_personal ON phones.id = phone_personal.phone WHERE phone_personal.personal = ?',
       [id]
     );
-
     if (existingPhone.length > 0) {
       await connection.query('UPDATE phones SET number = ? WHERE id = ?', [number, existingPhone[0].id]);
     } else {

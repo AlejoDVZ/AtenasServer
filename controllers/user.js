@@ -46,11 +46,13 @@ exports.cases = async (req, res) => {
   console.log('Defensoria:', def);
 
   const query = `
-    SELECT causas.id, causas.numberCausa, causas.dateB, causas.dateA, causas.tribunalRecord, causas.fiscalia, causas.calification, status.state 
+    SELECT causas.id, causas.numberCausa, causas.dateB, causas.dateA, causas.tribunalRecord, causas.fiscalia, causas.calification,status.id as status
     FROM causas 
     INNER JOIN causas_states ON causas_states.causa = causas.id 
     INNER JOIN status ON causas_states.status = status.id 
-    WHERE causas_states.status = 1 AND causas.defensoria = ?
+    WHERE causas_states.status IN (1,3
+
+    ) AND causas.defensoria = ?
   `;
 
   try {
@@ -67,7 +69,6 @@ exports.cases = async (req, res) => {
     return res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
-
 exports.proceedings = async (req, res) => {
   const caso = req.body.id;
   console.log('debug de la funcion',req.body.id);
@@ -104,17 +105,96 @@ WHERE
     if (results.length === 0) {
       return res.status(404).json({ message: 'procedimiento no encontrados' });
     }
-    const processedResults = results.map(result => ({
-      ...result,
-      downloadUrl: result.attachmentPath ? `/download/${result.id}` : null
-    }));
-    return res.status(200).json(processedResults);
+    return res.status(200).json(results);
   } catch (error) {
     console.error('Error in proceedings query:', error);
     return res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
+exports.addDefendant = async (req, res) => {
+  const {
+    // Defendant basic info
+    name,
+    lastname,
+    typeDocument,
+    document,
+    sex,
+    birth,
+    education,
+    captureOrder,
+    // Case and user info
+    caseId,
+    userId,
+    // Detention info (optional)
+    isDetained,
+    stablisment,
+    provisional,
+    arrestedDate
+  } = req.body;
 
+  // Validate required fields
+  if (!name || !lastname || !typeDocument || !document || !caseId || !userId) {
+    return res.status(400).json({ error: 'Campos obligatorios faltantes.' });
+  }
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // Insert the new defendant
+    const [defendantResult] = await connection.query(
+      'INSERT INTO defended (name, lastname, typeDocument, document, sex, birth, education, captureOrder) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [name, lastname, typeDocument, document, sex, birth, education, captureOrder]
+    );
+    const defendantId = defendantResult.insertId;
+
+    // Create relationship between case, defendant and user
+    await connection.query(
+      'INSERT INTO causas_defendido_usuario (causa, defendido, usuario) VALUES (?, ?, ?)',
+      [caseId, defendantId, userId]
+    );
+
+    // If the defendant is detained, add detention record
+    if (isDetained) {
+      await connection.query(
+        'INSERT INTO arrested (defended, stablisment, provisional, arrestedDate, freed) VALUES (?, ?, ?, ?, false)',
+        [defendantId, stablisment, provisional, arrestedDate]
+      );
+    }
+
+    await connection.commit();
+    res.status(201).json({ 
+      message: 'Defendido agregado exitosamente al caso.',
+      defendantId: defendantId
+    });
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error al agregar defendido:', error);
+    res.status(500).json({ error: 'Error al agregar el defendido al caso.' });
+  } finally {
+    connection.release();
+  }
+};
+
+exports.downloadDOc = async (req, res) => {
+  const caso  = req.body.attachmentPath;
+  console.log(caso)
+
+  try {
+    const [result] = await db.query('SELECT attachmentPath FROM actuaciones WHERE attachmentPath = ?', [caso]);
+    
+    if (result.length === 0 || !result[0].attachmentPath) {
+      return res.status(404).send('File not found');
+    }
+
+    const filePath = path.join(result[0].attachmentPath);
+    res.download(filePath);
+  } catch (error) {
+    console.error('Error downloading file:', error);
+    res.status(500).send('Error downloading file');
+  }
+};
 exports.defendants = async (req, res) => {
   const caso  = req.body.caso;
   console.log(caso);
@@ -144,7 +224,6 @@ exports.defendants = async (req, res) => {
     connection.release();
   }
 };
-
 exports.updateDefendant = async (req, res) => {
   const { defendantId, ...updates } = req.body;
 
@@ -187,7 +266,33 @@ exports.updateDefendant = async (req, res) => {
     connection.release();
   }
 };
+exports.updateStatus = async (req, res) => {
+  const {status,caso} = req.body;
+  const estado = parseInt(status)
+  console.log(req.body);
 
+  if (!status || !caso) {
+    return res.status(400).json({ error: 'Faltan campos requeridos' });
+  }
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+      await connection.query(
+        'UPDATE causas_states SET status = ? WHERE causa = ?',
+        [status,caso])
+
+    await connection.commit();
+    res.status(200).json({ message: 'Status actualizado exitosamente.' });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error al actualizar status de causa:', error);
+    res.status(500).json({ error: 'Error al actualizar la causa.' });
+  } finally {
+    connection.release();
+  }
+};
 exports.newproceeding = async (req,res) =>{
   const { activity, reportDate, result, caseId, userId } = req.body;
   let filePath = null;

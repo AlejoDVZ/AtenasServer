@@ -5,6 +5,7 @@ const loginController =require('./controllers/auth')
 const test = require('./controllers/test')
 const admin = require('./controllers/admin')
 const common = require('./controllers/commomdata')
+const casesInventoryController = require('./controllers/datatable');
 const error = require('./controllers/errors')
 
 router.get("/", function (req, res) {
@@ -25,15 +26,19 @@ router.get('/common/defensorias',common.defensorias)
 router.get('/common/fiscalias',common.fiscalias);
 router.get('/common/detentioncenters',common.detentioncenters);
 
-
+router.post('/cases-inventory', casesInventoryController.getCasesInventory);
+router.post('/proceedings', casesInventoryController.getProceedings);
+router.post('/case-statistics', casesInventoryController.getCaseStatistics);
 
 router.post('/check',usuarioController.checkcase);
 router.post('/cases',usuarioController.cases);
 router.post('/actuaciones',usuarioController.proceedings)
 router.post('/defendants', usuarioController.defendants);
 router.post('/update-defendant', usuarioController.updateDefendant);
+router.post('/update-status', usuarioController.updateStatus);
 router.post('/report',usuarioController.newProceedingWithFile, usuarioController.newproceeding );
 router.post('/register/newcase',usuarioController.newcase)
+router.post('/download',usuarioController.downloadDOc);
 
                                                                 //crud admin
 router.get('/allmembers',admin.MemberList)                                                                
