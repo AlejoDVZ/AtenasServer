@@ -17,49 +17,79 @@ exports.MemberList = (req,res) => {
     res.status(200).json(results);
 });
 }
-exports.NewMember = async (req,res) => {
-  const { name, lastname, document, typeDocument, role, email, number, password, defensoria} = req.body;
+exports.NewMember = async (req, res) => {
+  const { name, lastname, document, typeDocument, role, email, number, password, defensoria } = req.body;
   console.log(req.body);
-  const requiredFields = { name, lastname, document, typeDocument, role, email, number, password, defensoria};
+  
+  const def = parseInt(defensoria, 10);
+  const requiredFields = { name, lastname, document, typeDocument, role, email, number, password, defensoria };
   const missingFields = Object.keys(requiredFields).filter(field => !requiredFields[field]);
+  
   if (missingFields.length > 0) {
-    return res.status(400).json({ message: `Faltan los siguientes campos: ${missingFields.join(', ')}` });
+    throw new Error(`Faltan los siguientes campos: ${missingFields.join(', ')}`);
   }
+
   const connection = await db2.getConnection();
 
   try {
-
     await connection.beginTransaction(); // Iniciar una transacción
+
+    if (parseInt(role, 10) === 1) {
+      const [existingTitular] = await connection.query(
+        `SELECT *
+         FROM personal p 
+         JOIN defensorias_personal dp ON p.id = dp.personal 
+         WHERE dp.defensoria = ? AND p.role = 1`, [def]
+      );
+      if (existingTitular.length > 0) {
+        console.log('Ya existe titular');
+        throw new Error('El titular ya existe');
+      }
+
+      // Verificar si el rol existe
+      const [roleExists] = await connection.query('SELECT id FROM roles WHERE id = ?', [role]);
+      if (roleExists.length === 0) {
+        throw new Error(`Role with ID ${role} does not exist`);
+      }
+    }
+
     // Verificar si el usuario ya existe
     const [existingUser ] = await connection.query('SELECT * FROM personal WHERE document = ?', [document]);
     if (existingUser .length > 0) {
-      return res.status(400).json({ message: 'El personal ya está registrado' });
+      console.log('Personal ya registrado');
+      throw new Error('El personal ya está registrado');
     }
+
     // Verificar si el correo ya existe
     const [existingEmail] = await connection.query('SELECT * FROM personal WHERE email = ?', [email]);
     if (existingEmail.length > 0) {
-      return res.status(400).json({ message: 'El correo ya está registrado' });
+      console.log('Correo registrado');
+      throw new Error('El correo ya está registrado');
     }
+
     // Verificar si el teléfono ya existe
     const [existingPhone] = await connection.query('SELECT * FROM phones WHERE number = ?', [number]);
     if (existingPhone.length > 0) {
-      return res.status(400).json({ message: 'El teléfono ya está registrado' });
+      console.log('Teléfono registrado');
+      throw new Error('El teléfono ya está registrado');
     }
-    // Insertar el nuevo usuario
-    const hashedPassword = await bcrypt.hash(password,10)
 
-    const [userResult] = await connection.query('INSERT INTO personal (name, lastname, typeDocument, document, role, email, password) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-      [name, lastname, typeDocument, document, role, email, hashedPassword]);
+    // Insertar el nuevo usuario
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const [userResult] = await connection.query(
+      'INSERT INTO personal (name, lastname, typeDocument, document, role, email, password) VALUES (?, ?, ?, ?, ?, ?, ?)', 
+      [name, lastname, typeDocument, document, role, email, hashedPassword]
+    );
     const userId = userResult.insertId;
-    
+
     // Insertar el teléfono
     const [phoneResult] = await connection.query('INSERT INTO phones (number) VALUES (?)', [number]);
     const phoneId = phoneResult.insertId;
+
     // Relacionar el usuario con el teléfono
-
     await connection.query('INSERT INTO phone_personal (personal, phone) VALUES (?, ?)', [userId, phoneId]);
+    await connection.query('INSERT INTO defensorias_personal (defensoria, personal) VALUES (?, ?)', [defensoria, userId]);
 
-    await connection.query('INSERT INTO defensorias_personal (defensoria,personal) VALUES (?,?)',[defensoria,userId]);
     // Confirmar la transacción
     await connection.commit();
     res.status(201).json({ message: 'Usuario creado exitosamente' });
@@ -67,9 +97,9 @@ exports.NewMember = async (req,res) => {
     // Revertir la transacción en caso de error
     await connection.rollback();
     console.error('Error al crear el usuario:', error);
-    res.status(500).json({ message: 'Error al crear el usuario' });
-    connection.release();
+    res.status(500).json({ message: error.message || 'Error al crear el usuario' });
   } finally {
+    connection.release(); // Asegúrate de liberar la conexión
   }
 };
 exports.NewDefensoria = (req, res) => {
@@ -96,6 +126,37 @@ exports.NewDefensoria = (req, res) => {
     db.query(query, [office, number], (error, results) => {
       if (error) {
         console.error('Error al insertar la defensoria:', error);
+        return res.status(500).json({ error: 'Error al crear la Defensoría' });
+      }
+      // Enviar respuesta de éxito
+      return res.status(201).json({ message: 'Defensoria creada satisfactoriamente.' });
+    });
+  });
+};
+exports.NewFiscalia = (req, res) => {
+
+  console.log(req.body);
+  const number = req.body.number;
+  // Verificar si el número está presente
+  if (!number || number == null) {
+    return res.status(400).json({ error: 'Ingresar el número de la Fiscalia' });
+  }
+  // Comenzar la consulta para verificar si ya existe una Defensoría con ese número
+  db.query('SELECT * FROM fiscalias WHERE fiscalias.number = ?', number, (error, results) => {
+    if (error) {
+      console.error('Error al verificar la Fiscalia:', error);
+      return res.status(500).json({ error: 'Error al verificar la Fiscalia' });
+    }
+    // Si ya existe una defensoria con ese número
+    if (results.length > 0) {
+      return res.status(400).json({ message: 'Ya existe una Fiscalia con ese número' });
+    }
+    // Si no existe, proceder a insertar la nueva Defensoría
+    const office = `Fiscalia ${number}`;
+    const query = 'INSERT INTO `defensorias` (`id`, `office`, number) VALUES (NULL, ?, ?);';
+    db.query(query, [office, number], (error, results) => {
+      if (error) {
+        console.error('Error al insertar la fiscalia:', error);
         return res.status(500).json({ error: 'Error al crear la Defensoría' });
       }
       // Enviar respuesta de éxito
@@ -183,13 +244,24 @@ exports.UpdatePersonal = async (req, res) => {
     if (isNaN(roleId)) {
       throw new Error('Invalid role ID');
     }
-
-    // Verify if the role exists
-    const [roleExists] = await connection.query('SELECT id FROM roles WHERE id = ?', [roleId]);
-    if (roleExists.length === 0) {
-      throw new Error(`Role with ID ${roleId} does not exist`);
+    if(role === 1){
+      const [existingTitular] = await connection.query(
+        `SELECT *
+         FROM personal p 
+         JOIN defensorias_personal dp ON p.id = dp.personal 
+         WHERE dp.defensoria = ? AND p.role = 1`,[def, id]
+      );
+      if (existingTitular.length > 0) {
+        throw new Error('El titular ya existe');
+      }
+      console.log('debug')
+      // Verify if the role exists
+      const [roleExists] = await connection.query('SELECT id FROM roles WHERE id = ?', [roleId]);
+      if (roleExists.length === 0) {
+        throw new Error(`Role with ID ${roleId} does not exist`);
+      }
     }
-
+    
     // Update personal information
     await connection.query(
       'UPDATE personal SET name = ?, lastname = ?, typeDocument = ?, document = ?, role = ?, email = ? WHERE id = ?',
@@ -221,6 +293,46 @@ exports.UpdatePersonal = async (req, res) => {
     await connection.rollback();
     console.error('Error al actualizar el personal:', error);
     res.status(500).json({ message: error.message || 'Error al actualizar el personal' });
+  } finally {
+    connection.release();
+  }
+};
+exports.UpdatePassword = async (req, res) => {
+  const { id, password } = req.body;
+
+  // Validar campos requeridos
+  if (!id || !password) {
+    return res.status(400).json({ message: 'ID y nueva contraseña son requeridos.' });
+  }
+
+  // Validar la longitud de la nueva contraseña
+  if (password.length < 8) {
+    return res.status(400).json({ message: 'La nueva contraseña debe tener al menos 8 caracteres.' });
+  }
+  console.log(password,id)
+  const connection = await db2.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    // Hashear la nueva contraseña
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Actualizar la contraseña en la base de datos
+    const [result] = await connection.query('UPDATE personal SET password = ? WHERE id = ?', [hashedPassword, id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'No se encontró el personal con ese ID.' });
+    }
+
+    // Confirmar la transacción
+    await connection.commit();
+    res.status(200).json({ message: 'Contraseña actualizada exitosamente.' });
+  } catch (error) {
+    // Revertir la transacción en caso de error
+    await connection.rollback();
+    console.error('Error al actualizar la contraseña:', error);
+    res.status(500).json({ message: 'Error al actualizar la contraseña.' });
   } finally {
     connection.release();
   }

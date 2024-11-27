@@ -37,3 +37,8 @@ db.query('SELECT * FROM stablisments;', (error, results) => {
         res.status(200).json(results);
 });
 };
+exports.calificaciones = (req,res) => {
+        db.query('SELECT * FROM calificaciones; ',(error,results) =>{
+               if (error) throw error;
+               res.status(200).json(results);
+       });};

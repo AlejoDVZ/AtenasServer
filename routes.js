@@ -25,6 +25,7 @@ router.get('/common/roles',common.roles);
 router.get('/common/defensorias',common.defensorias)
 router.get('/common/fiscalias',common.fiscalias);
 router.get('/common/detentioncenters',common.detentioncenters);
+router.get('/common/calificaciones',common.calificaciones);
 
 router.post('/cases-inventory', casesInventoryController.getCasesInventory);
 router.post('/proceedings', casesInventoryController.getProceedings);
@@ -49,6 +50,7 @@ router.post('/register/defensoria',admin.NewDefensoria);
 router.delete('/delete/defensoria',admin.DeleteDefensoria)
 router.delete('/delete/personal',admin.DeletePersonal)
 
+router.put('/update/password',admin.UpdatePassword)
 router.put('/update/personal/:id',admin.UpdatePersonal)
                                                                   //tests
 router.post('/test/login',test.login);

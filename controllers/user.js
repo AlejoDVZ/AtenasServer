@@ -281,7 +281,7 @@ exports.updateStatus = async (req, res) => {
 
       await connection.query(
         'UPDATE causas_states SET status = ? WHERE causa = ?',
-        [status,caso])
+        [estado,caso])
 
     await connection.commit();
     res.status(200).json({ message: 'Status actualizado exitosamente.' });
