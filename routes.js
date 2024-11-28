@@ -36,6 +36,7 @@ router.post('/cases',usuarioController.cases);
 router.post('/actuaciones',usuarioController.proceedings)
 router.post('/defendants', usuarioController.defendants);
 router.post('/update-defendant', usuarioController.updateDefendant);
+router.post('/add-defendant', usuarioController.anotherDefendant);
 router.post('/update-status', usuarioController.updateStatus);
 router.post('/report',usuarioController.newProceedingWithFile, usuarioController.newproceeding );
 router.post('/register/newcase',usuarioController.newcase)

@@ -3,6 +3,7 @@ const mysql = require('mysql2/promise');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs-extra');
+const { body, validationResult } = require('express-validator');
 const db = mysql.createPool({
   host: "localhost",
   port:3306,
@@ -97,9 +98,10 @@ INNER JOIN
 WHERE 
     c.id = ?;
   `;
-
+  const connection = await db.getConnection();
   try {
-    const [results] = await db.query(query, [caso]);
+    
+    const [results] = await connection.query(query, [caso]);
     console.log('Query results:', results);
 
     if (results.length === 0) {
@@ -109,6 +111,8 @@ WHERE
   } catch (error) {
     console.error('Error in proceedings query:', error);
     return res.status(500).json({ error: 'Error interno del servidor' });
+  }finally{
+    connection.release();
   }
 };
 exports.addDefendant = async (req, res) => {
@@ -195,6 +199,7 @@ exports.downloadDOc = async (req, res) => {
     res.status(500).send('Error downloading file');
   }
 };
+
 exports.defendants = async (req, res) => {
   const caso  = req.body.caso;
   console.log(caso);
@@ -205,11 +210,12 @@ exports.defendants = async (req, res) => {
   const connection = await db.getConnection();
   try {
     const [defendants] = await connection.query(
-      `SELECT DISTINCT d.id, d.name, d.lastname, d.typeDocument, d.document, d.sex, d.birth, d.education, d.captureOrder,
+      `SELECT DISTINCT d.id, d.name, d.lastname, td.type , d.document, d.sex, d.birth, d.education, d.captureOrder,
               a.stablisment, a.provisional, a.arrestedDate, a.freed
        FROM causas_defendido_usuario AS cdu
        INNER JOIN defended AS d ON cdu.defendido = d.id
        LEFT JOIN arrested AS a ON a.defended = d.id
+       LEFT JOIN type_documents as td ON td.id = d.typeDocument
        WHERE cdu.causa = ?`,
       [caso]
     );
@@ -224,8 +230,10 @@ exports.defendants = async (req, res) => {
     connection.release();
   }
 };
+
 exports.updateDefendant = async (req, res) => {
   const { defendantId, ...updates } = req.body;
+  console.log(req.body);
 
   if (!defendantId) {
     return res.status(400).json({ error: 'Falta el ID del defendido.' });
@@ -235,7 +243,7 @@ exports.updateDefendant = async (req, res) => {
   try {
     await connection.beginTransaction();
 
-    if (updates.freed) {
+    if (updates.free) {
       await connection.query(
         'UPDATE arrested SET freed = TRUE WHERE defended = ?',
         [defendantId]
@@ -266,6 +274,7 @@ exports.updateDefendant = async (req, res) => {
     connection.release();
   }
 };
+
 exports.updateStatus = async (req, res) => {
   const {status,caso} = req.body;
   const estado = parseInt(status)
@@ -293,6 +302,7 @@ exports.updateStatus = async (req, res) => {
     connection.release();
   }
 };
+
 exports.newproceeding = async (req,res) =>{
   const { activity, reportDate, result, caseId, userId } = req.body;
   let filePath = null;
@@ -422,3 +432,107 @@ exports.newcase = async (req,res) =>{
     connection.release();
   }
 };
+exports.anotherDefendant = async (req, res) => {
+  const {
+    name, lastname, typeDocument, document, birth, education, gender,
+    captureOrder, isDetained, stablisment, arrestedDate, userId,caseId
+  } = req.body;
+  let tipo = parseInt(typeDocument);
+  console.log(req.body)
+  const errors = [];
+  const isValidDateAndAdult = (dateString) => { const today = new Date(); const birthDate = new Date(dateString);  if (isNaN(birthDate.getTime())) { return false; }  let age = today.getFullYear() - birthDate.getFullYear(); const monthDiff = today.getMonth() - birthDate.getMonth(); const dayDiff = today.getDate() - birthDate.getDate(); if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) { age--; } return age >= 18; };
+
+  // Validar nombre
+  if (!name || name.trim() === '') {
+    errors.push({ msg: 'El nombre es requerido' });
+  }
+  // Validar apellido
+  if (!lastname || lastname.trim() === '') {
+    errors.push({ msg: 'El apellido es requerido' });
+  }
+  // Validar tipo de documento (opcional)
+  if (tipo !== undefined && !Number.isInteger(Number(tipo))) {
+    errors.push({ msg: 'Tipo de documento inválido' });
+  }
+  // Validar número de documento (opcional)
+  if (!Number.isInteger(Number(document))) {
+    errors.push({ msg: 'El número de documento es requerido' });
+  }
+  if (!isValidDateAndAdult(birth)) {
+     errors.push({ msg: 'Fecha de nacimiento inválida o menor de edad' }); 
+  }
+  // Validar nivel de educación
+  if (!Number.isInteger(Number(education))) {
+    errors.push({ msg: 'Nivel de educación inválido' });
+  }
+  // Validar géner
+  if (!['0', '1'].includes(gender)) {
+    errors.push({ msg: 'Género inválido' });
+  }
+  // Validar estado de detención
+  if (typeof isDetained !== 'boolean') {
+    errors.push({ msg: 'Estado de detención inválido' });
+  }
+  // Validar centro de detención (opcional)
+  if (isDetained && (stablisment === undefined || !Number.isInteger(Number(stablisment)))) {
+    errors.push({ msg: 'Centro de detención inválido' });
+  }
+  // Validar fecha de detención (opcional)
+  if (isDetained && !isValidDate(arrestedDate)) {
+    errors.push({ msg: 'Fecha de detención inválida' });
+  }
+  // Validar orden de captura
+  if (typeof captureOrder !== 'boolean') {
+    errors.push({ msg: 'Orden de captura inválida' });
+  }
+  // Validar ID de caso
+  if (caseId === undefined) {
+    errors.push({ msg: 'ID de caso inválido' });
+  }
+  // Si hay errores, devolverlos
+  if (errors.length > 0) {
+    return res.status(400).json({ errors });
+  }
+  let connection;
+  try {
+    connection = await db.getConnection();
+    await connection.beginTransaction();
+
+    // Insertar el defendido
+    const [result] = await connection.execute(
+      'INSERT INTO defended (name, lastname, typeDocument, document,sex,birth, education, captureOrder) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [name, lastname, typeDocument, document,gender,birth,education, captureOrder]
+    );
+
+    const defendantId = result.insertId;
+
+    // Si el defendido está detenido, registrar en la tabla arrested
+    if (isDetained) {
+      if (!stablisment || !arrestedDate) {
+        throw new Error('Se requiere establecimiento y fecha de detención para un defendido detenido');
+      }
+      await connection.execute(
+        'INSERT INTO arrested (defendant_id, stablisment, arrested_date) VALUES (?, ?, ?)',
+        [defendantId, stablisment, arrestedDate]
+      );
+    }
+    await connection.execute(
+      'INSERT INTO causas_defendido_usuario (causa, defendido, usuario) VALUES (?, ?, ?)',
+      [caseId, defendantId, userId]
+    );
+
+    await connection.commit();
+
+    res.status(201).json({
+      message: 'Defendido agregado exitosamente',
+      defendantId: defendantId
+    });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error('Error al agregar defendido:', error);
+    res.status(500).json({ message: 'Error interno del servidor', error: error.message });
+  } finally {
+    if (connection) connection.release();
+  } 
+};
+// Función para agregar un nuevo defendido
