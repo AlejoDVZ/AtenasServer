@@ -11,7 +11,7 @@ const db2 = mysql.createPool({
     database: "atenasdb",
   });
 exports.MemberList = (req,res) => {
-  const query ='SELECT p.id, p.name, p.lastname, p.typeDocument, p.document, roles.role as role, p.email, phones.number, dp.defensoria FROM personal AS p INNER JOIN phone_personal ON phone_personal.personal = p.id INNER JOIN phones ON phone_personal.phone = phones.id INNER JOIN roles ON roles.id = p.role LEFT JOIN defensorias_personal as dp on p.id = dp.personal;'
+  const query ='SELECT p.id, p.name, p.lastname, p.typeDocument, p.document, roles.role as role, p.email, phones.number, dp.defensoria FROM personal AS p INNER JOIN phone_personal ON phone_personal.personal = p.id INNER JOIN phones ON phone_personal.phone = phones.id INNER JOIN roles ON roles.id = p.role LEFT JOIN defensorias_personal as dp on p.id = dp.personal WHERE inactive = 0;'
   db.query(query,(error,results) =>{
     if (error) throw error;
     res.status(200).json(results);
@@ -56,8 +56,14 @@ exports.NewMember = async (req, res) => {
     // Verificar si el usuario ya existe
     const [existingUser ] = await connection.query('SELECT * FROM personal WHERE document = ?', [document]);
     if (existingUser .length > 0) {
-      console.log('Personal ya registrado');
-      throw new Error('El personal ya está registrado');
+      if (existingUser[0].inactive === 1) {
+        await connection.query('UPDATE personal SET inactive = 0 WHERE id = ?', [existingUser[0].id]);
+        console.log('Usuario reactivado');
+        return res.status(200).json({ message: 'Usuario reactivado exitosamente' });
+      } else {
+        console.log('Usuario ya existe y está activo');
+        throw new Error('El usuario ya existe y está activo');
+      }
     }
 
     // Verificar si el correo ya existe
@@ -229,6 +235,38 @@ exports.DeletePersonal = async (req,res) =>{
     connection.release(); // Liberar la conexión
   }
 }
+exports.DisablePersonal = async (req,res) =>{
+
+  const { id} = req.body;
+  console.log(req.body);
+  const requiredFields = { id };
+  const missingFields = Object.keys(requiredFields).filter(field => !requiredFields[field]);
+  if (missingFields.length > 0) {
+    return res.status(400).json({ message: `Faltan los siguientes campos: ${missingFields.join(', ')}` });
+  }
+  const connection = await db2.getConnection();
+  await connection.beginTransaction();
+
+  try {
+    const [existingUser] = await connection.query('SELECT * from personal WHERE personal.id = ?', [id]);
+    console.log(existingUser);
+    if(existingUser.results === null){
+        error
+    }
+    const fuap = await connection.query('UPDATE `personal` SET `inactive` = 1 WHERE `personal`.`id` = ?',[id]);
+    // Confirmar la transacción
+    await connection.commit();
+    res.status(201).json({ message: 'Usuario eliminado exitosamente' });
+  } catch (error) {
+    // Revertir la transacción en caso de error
+    await connection.rollback();
+    console.error('Error al eliminar el usuario:', error);
+    res.status(500).json({ message: 'Error al eliminar el usuario' });
+    connection.release();
+  } finally {
+    connection.release(); // Liberar la conexión
+  }
+}
 exports.UpdatePersonal = async (req, res) => {
   const { id, name, lastname, typeDocument, document, role, email, number,defensoria } = req.body;
   console.log('Received data:', req.body);
@@ -333,6 +371,196 @@ exports.UpdatePassword = async (req, res) => {
     await connection.rollback();
     console.error('Error al actualizar la contraseña:', error);
     res.status(500).json({ message: 'Error al actualizar la contraseña.' });
+  } finally {
+    connection.release();
+  }
+};
+
+exports.newcalificacion = async (req,res) =>{
+  const  calificacion  = req.body.calificacion;
+
+  function toTitleCase(str) {
+    return str.replace(/\w\S*/g, function(txt) {
+      return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+    });
+  }
+
+  const Tcalificacion = toTitleCase(calificacion)
+
+  const connection = await db2.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [existingCalification] = await connection.query(
+      'SELECT * FROM `calificaciones` WHERE `calificacion` = ?;',
+      [Tcalificacion]
+    );
+
+    if (existingCalification.length > 0) {
+      return res.status(400).json({ error: 'La calificación ya existe en la base de datos' });
+    }
+
+
+    const [calificationResult] = await connection.query(
+      'INSERT INTO `calificaciones` (`calificacion`) VALUES (?);',
+      [Tcalificacion]
+    );
+
+    await connection.commit();
+    return res.status(201).json({ message: 'calificacion registrada exitosamente' });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error al registrar la calificacion:', error);
+    res.status(500).json({ error: 'Error al registrar la calificacion' });
+  } finally {
+    connection.release();
+  }
+};
+
+exports.deletecalificacion = async (req,res) =>{
+
+  console.log('requestbody',req.body)
+  const  id  = req.body.id;
+  console.log('Id:',id)
+
+  const connection = await db2.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [existingCalification] = await connection.query(
+      'SELECT * FROM `calificaciones` WHERE `id` = ?;',
+      [id]
+    );
+
+    if (existingCalification.length === 0) {
+      return res.status(404).json({ error: 'Calificación no encontrada' });
+    }
+
+
+    // Borrar la calificación por ID
+    await connection.query(
+      'DELETE FROM `calificaciones` WHERE `id` = ?;',
+      [id]
+    );
+
+    await connection.commit();
+    return res.status(201).json({ message: 'calificacion eliminada exitosamente' });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error al registrar la calificacion:', error);
+    res.status(500).json({ error: 'Error al eliminar la calificacion' });
+  } finally {
+    connection.release();
+  }
+};
+
+exports.newDetentionCenter = async (req, res) => {
+  const { name } = req.body;
+
+  function toTitleCase(str) {
+    return str.replace(/\w\S*/g, function(txt) {
+      return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+    });
+  }
+
+  const centerName = toTitleCase(name);
+
+  const connection = await db2.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [existingCenter] = await connection.query(
+      'SELECT * FROM `stablisments` WHERE `name` = ?;',
+      [centerName]
+    );
+
+    if (existingCenter.length > 0) {
+      return res.status(400).json({ error: 'El centro de reclusión ya existe en la base de datos' });
+    }
+
+    const [centerResult] = await connection.query(
+      'INSERT INTO `stablisments` (`name`) VALUES (?);',
+      [centerName]
+    );
+
+    await connection.commit();
+    return res.status(201).json({ message: 'Centro de reclusión registrado exitosamente' });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error al registrar el centro de reclusión:', error);
+    res.status(500).json({ error: 'Error al registrar el centro de reclusión' });
+  } finally {
+    connection.release();
+  }
+};
+
+exports.updateDetentionCenter = async (req, res) => {
+  const { id } = req.params;
+  const { name } = req.body;
+
+  function toTitleCase(str) {
+    return str.replace(/\w\S*/g, function(txt) {
+      return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+    });
+  }
+
+  const centerName = toTitleCase(name);
+
+  const connection = await db2.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [existingCenter] = await connection.query(
+      'SELECT * FROM `detention_centers` WHERE `name` = ? AND `id` != ?;',
+      [centerName, id]
+    );
+
+    if (existingCenter.length > 0) {
+      return res.status(400).json({ error: 'Ya existe un centro de reclusión con ese nombre' });
+    }
+
+    await connection.query(
+      'UPDATE `detention_centers` SET `name` = ? WHERE `id` = ?;',
+      [centerName, id]
+    );
+
+    await connection.commit();
+    return res.status(200).json({ message: 'Centro de reclusión actualizado exitosamente' });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error al actualizar el centro de reclusión:', error);
+    res.status(500).json({ error: 'Error al actualizar el centro de reclusión' });
+  } finally {
+    connection.release();
+  }
+};
+
+exports.deleteDetentionCenter = async (req, res) => {
+  const { id } = req.body;
+  const connection = await db2.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [existingCenter] = await connection.query(
+      'SELECT * FROM `stablisments` WHERE `id` = ?;',
+      [id]
+    );
+
+    if (existingCenter.length === 0) {
+      return res.status(404).json({ error: 'Centro de reclusión no encontrado' });
+    }
+
+    await connection.query(
+      'DELETE FROM `stablisments` WHERE `id` = ?;',
+      [id]
+    );
+
+    await connection.commit();
+    return res.status(200).json({ message: 'Centro de reclusión eliminado exitosamente' });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error al eliminar el centro de reclusión:', error);
+    res.status(500).json({ error: 'Error al eliminar el centro de reclusión' });
   } finally {
     connection.release();
   }

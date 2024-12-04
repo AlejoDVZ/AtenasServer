@@ -23,7 +23,7 @@ exports.login = async (req,res) =>{
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-        return res.status(401).json({ error: 'Credenciales contraseña inválida' })
+        return res.status(401).json({ error: 'Contraseña inválida' })
       }
 
     console.log('estas viendo la informacion del usuario',user);

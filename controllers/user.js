@@ -70,9 +70,9 @@ exports.cases = async (req, res) => {
     return res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
+
 exports.proceedings = async (req, res) => {
   const caso = req.body.id;
-  console.log('debug de la funcion',req.body.id);
   if (!caso) {
     return res.status(400).json({ error: 'caso es obligatorio.' });
   }
@@ -102,7 +102,7 @@ WHERE
   try {
     
     const [results] = await connection.query(query, [caso]);
-    console.log('Query results:', results);
+
 
     if (results.length === 0) {
       return res.status(404).json({ message: 'procedimiento no encontrados' });
@@ -115,6 +115,7 @@ WHERE
     connection.release();
   }
 };
+
 exports.addDefendant = async (req, res) => {
   const {
     // Defendant basic info
@@ -309,6 +310,12 @@ exports.newproceeding = async (req,res) =>{
 
   console.log(req.body)
 
+  // Convertir reportDate a un objeto Date
+  const date = new Date(reportDate);
+
+  // Formatear la fecha en el formato adecuado (YYYY-MM-DD HH:MM:SS)
+  const formattedDate = date.toISOString().slice(0, 19).replace('T', ' ');
+
   if (req.file) {
     console.log('Nombre del archivo:', req.file.filename);
     console.log('Ruta del archivo:', req.file.path);
@@ -321,8 +328,8 @@ exports.newproceeding = async (req,res) =>{
 
     // Insertar la actuación
     const [proceedingResult] = await connection.query(
-      'INSERT INTO actuaciones (actividad, resultado, reported, dateReport) VALUES (?, ?, NOW(), ?)',
-      [activity, result, reportDate]
+      'INSERT INTO actuaciones (actividad, resultado, dateReport) VALUES (?, ?, ?)',
+      [activity, result, formattedDate]
     );
     const proceedingId = proceedingResult.insertId;
 
@@ -349,7 +356,7 @@ exports.newproceeding = async (req,res) =>{
   } finally {
     connection.release();
   }
-} 
+};
 
 exports.checkcase = async (req,res)=>{
   const { numberCausa, defensoriaId } = req.body;
@@ -373,7 +380,7 @@ exports.checkcase = async (req,res)=>{
     console.error('Error al verificar el caso:', error);
     res.status(500).json({ error: 'Error al verificar el caso.' });
   }
-}
+};
 
 exports.newcase = async (req,res) =>{
   
@@ -432,6 +439,7 @@ exports.newcase = async (req,res) =>{
     connection.release();
   }
 };
+
 exports.anotherDefendant = async (req, res) => {
   const {
     name, lastname, typeDocument, document, birth, education, gender,
@@ -535,4 +543,6 @@ exports.anotherDefendant = async (req, res) => {
     if (connection) connection.release();
   } 
 };
+
+
 // Función para agregar un nuevo defendido
